@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Odds Arbitrage Analyser</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; min-height: 100vh; }
@@ -89,20 +90,38 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 </head>
 <body>
 <div class="app">
-<h1>Odds Arbitrage Analyser</h1>
+<div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e0e0dc;padding-bottom:10px;margin-bottom:16px">
+<h1 style="margin:0">Odds Arbitrage Analyser</h1>
+<nav style="display:flex;gap:6px">
+<span style="font-size:12px;font-weight:600;padding:5px 12px;border-radius:7px;background:#1a1a1a;color:#fff">Analyser</span>
+<a href="fees.html" style="font-size:12px;font-weight:600;padding:5px 12px;border-radius:7px;background:#fff;color:#555;border:1px solid #ddd;text-decoration:none">Cost Reference →</a>
+</nav>
+</div>
 <div class="card" id="ledgerCard" style="margin-bottom:16px">
 <div class="section-label">📒 paper trading ledger</div>
 <div id="ledgerSummary"></div>
-<div class="calc-row" style="margin-top:10px;flex-wrap:wrap;gap:12px">
-<span style="font-size:11px;color:#888;flex:0 0 100%">transaction fee assumptions (commission on net winnings only — edit to match your accounts)</span>
-<label style="font-size:11px;color:#666">sportsbook % <input type="number" id="feeSportsbook" value="0" min="0" max="20" step="0.5" style="width:55px;padding:3px 6px;border:1px solid #ddd;border-radius:5px" onchange="updateFeeRates()"></label>
-<label style="font-size:11px;color:#666">exchange % <input type="number" id="feeExchange" value="2" min="0" max="20" step="0.5" style="width:55px;padding:3px 6px;border:1px solid #ddd;border-radius:5px" onchange="updateFeeRates()"></label>
-<label style="font-size:11px;color:#666">prediction mkt % <input type="number" id="feePrediction" value="1" min="0" max="20" step="0.5" style="width:55px;padding:3px 6px;border:1px solid #ddd;border-radius:5px" onchange="updateFeeRates()"></label>
+<div style="font-size:11px;color:#666;margin-top:10px;line-height:1.9">
+<label>Betfair commission <input type="number" id="feeBetfair" value="5" min="0" max="10" step="0.5" style="width:50px;padding:2px 5px;border:1px solid #ddd;border-radius:4px" onchange="updateFeeRates()">% — set yours from My Betfair Rewards</label><br>
+<label>slippage haircut <input type="number" id="slippagePct" value="0.5" min="0" max="10" step="0.1" style="width:50px;padding:2px 5px;border:1px solid #ddd;border-radius:4px" onchange="updateFeeRates()">% — displayed top-of-book rarely fills in full size</label><br>
+<a href="fees.html" style="color:#0C447C;font-weight:600;text-decoration:none">📋 full transaction cost reference →</a>
+<span style="color:#aaa">every fee across all platforms, verified Aug 2026</span>
+</div>
+<div style="background:#f9f9f7;border:1px solid #e8e8e4;border-radius:8px;padding:0.75rem 1rem;margin-top:10px">
+<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;font-weight:600">
+<input type="checkbox" id="autoScanToggle" onchange="toggleAutoScan()"> ⏱ auto-scan (proximity-weighted)
+</label>
+<div style="font-size:11px;color:#666;margin-top:6px;line-height:1.6">
+Concentrates scans in the <strong>6 hours before each event</strong>, when team news, late money and liquidity shifts move the odds most. Re-evaluates every 15 min; won't re-scan the same match within 45 min; skips anything inside 20 min of start.
+<label style="display:block;margin-top:6px">daily API request budget <input type="number" id="dailyBudget" value="8" min="1" max="200" step="1" style="width:55px;padding:2px 5px;border:1px solid #ddd;border-radius:4px" onchange="updateSchedStatus()"> — the free tier is 250/month ≈ 8/day, so this caps spend</label>
+</div>
+<div id="schedStatus" style="font-size:11px;color:#888;margin-top:6px"></div>
+<div style="font-size:11px;color:#c77;margin-top:6px">⚠ only runs while this tab is open — browsers can't execute a closed page</div>
 </div>
 <div id="ledgerTable" style="margin-top:10px"></div>
-<div style="display:flex;gap:8px;margin-top:10px">
-<button onclick="refreshLedgerUI()">↻ refresh</button>
-<button onclick="resetLedger()" style="color:#c33">reset ledger to £5,000</button>
+<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+<button onclick="refreshLedgerUI()" style="flex:1">↻ refresh</button>
+<button onclick="exportLedgerXlsx()" class="primary" style="flex:1">⬇ export to Excel</button>
+<button onclick="resetLedger()" style="color:#c33;flex:1">reset to £5,000</button>
 </div>
 </div>
 <div class="layout">
@@ -541,8 +560,27 @@ let arbFound=false;
 if(bestP1&&bestP2){
 const arb=1/bestP1+1/bestP2;
 if(arb<1){arbFound=true;const pf=((1/arb-1)*100).toFixed(2);
-document.getElementById('arbBox').innerHTML='<div class="arb-box">⚡ Arbitrage — ~'+pf+'% profit (implied '+(arb*100).toFixed(1)+'%)<div style="font-size:11px;margin-top:4px;opacity:.8">⚠ verify both prices on the actual sites before staking · profit is pre-fee, see ledger for live-account estimate</div><button class="ledger-action-btn" style="margin-top:8px" onclick="logCurrentArb()">📒 log to ledger</button></div>';
-log('ARB ~'+pf+'% — VERIFY before betting','ok');}
+// Fee-adjusted worst case: commission only bites if the winning leg sits on an exchange,
+// so the real question is what happens when the MORE expensive leg wins.
+const e1=Object.entries(results).find(([s,r])=>r.p1===bestP1),e2=Object.entries(results).find(([s,r])=>r.p2===bestP2);
+let feeNote='';
+if(e1&&e2&&typeof ledgerState!=='undefined'&&ledgerState){
+const stake=1000;
+const o1=slipOdds(bestP1),o2=slipOdds(bestP2);
+const i1=1/o1,i2=1/o2,over=i1+i2;
+const s1=stake*(i1/over),s2=stake*(i2/over);
+const gross=stake*(1/over)-stake;
+const sunk=entryFee(e1[0],e1[1].type,s1,o1)+entryFee(e2[0],e2[1].type,s2,o2);
+const net1=gross-sunk-winFee(e1[0],e1[1].type,s1,o1);
+const net2=gross-sunk-winFee(e2[0],e2[1].type,s2,o2);
+const worst=Math.min(net1,net2);
+const worstPct=(worst/stake)*100;
+feeNote=worst>0
+?'<div style="font-size:11px;margin-top:6px">after fees + '+((ledgerState.slippage||0)*100).toFixed(1)+'% slippage, worst case still <strong>+'+worstPct.toFixed(2)+'%</strong> (£'+worst.toFixed(2)+' per £1,000)</div>'
+:'<div style="font-size:11px;margin-top:6px;color:#712B13;font-weight:600">⚠ NOT risk-free after costs — if the '+(net1<net2?e1[1].label:e2[1].label)+' leg wins, this loses '+Math.abs(worstPct).toFixed(2)+'% (£'+worst.toFixed(2)+' per £1,000). Commission on the winning leg exceeds the edge.</div>';
+}
+document.getElementById('arbBox').innerHTML='<div class="arb-box">⚡ Arbitrage — ~'+pf+'% gross profit (implied '+(arb*100).toFixed(1)+'%)'+feeNote+'<div style="font-size:11px;margin-top:4px;opacity:.8">⚠ verify both prices on the actual sites before staking</div><button class="ledger-action-btn" style="margin-top:8px" onclick="logCurrentArb()">📒 log to ledger</button></div>';
+log('ARB ~'+pf+'% gross — VERIFY before betting','ok');}
 else document.getElementById('arbBox').innerHTML='<div class="no-arb-box">No arbitrage — combined implied: '+(arb*100).toFixed(1)+'%</div>';
 }
 // +EV value bets (independent of arb — a single side beating the fair consensus price)
@@ -661,37 +699,120 @@ document.getElementById('evCalcOut').innerHTML=
 }
 
 // ---------- Paper trading ledger ----------
-const LEDGER_KEY='paper_ledger_v1';
+const LEDGER_KEY='paper_ledger_v2';
 const STARTING_BANKROLL=5000;
-const DEFAULT_FEE_RATES={sportsbook:0,exchange:2,prediction:1}; // % commission on NET WINNINGS only
+// ---- Real transaction cost model (verified Aug 2026 — CHECK YOUR OWN ACCOUNT, rates vary by tier/region) ----
+// Three fundamentally different fee SHAPES, not one flat rate:
+//  'commission' — exchanges: rate x NET WINNINGS, charged only when you win. Nothing on a loss.
+//  'trade'      — prediction markets: coeff x C x P x (1-P) charged ON ENTRY, win or lose.
+//                 With P=1/odds and C=stake/P this reduces to: coeff x stake x (odds-1)/odds.
+//                 Peaks at even money (P=0.5), shrinks toward both extremes.
+//  'none'       — sportsbooks: no explicit fee, their margin is already inside the odds.
+const FEE_MODEL={
+// ---- EXCHANGES: commission on NET WINNINGS, charged only when you win ----
+'betfair-ex':{kind:'commission',rate:0.05,label:'Betfair Exchange',note:'UK/IE base 5%. Reducible toward ~2% via My Betfair Rewards. Charged on net winnings PER MARKET, so a back+lay that nets zero pays nothing. Expert Fee applies on top for big winners — see below.'},
+'betfair':{kind:'commission',rate:0.05,label:'Betfair SP',note:'As above.'},
+'smarkets':{kind:'commission',rate:0.02,label:'Smarkets',note:'Flat 2%, no premium/expert charge. Sign-up offers sometimes give 0% for an intro period.'},
+'betdaq':{kind:'commission',rate:0.02,label:'Betdaq',note:'2% standard; 0% on some markets. No premium charge.'},
+'matchbook':{kind:'commission',rate:0.015,label:'Matchbook',note:'MAKER-TAKER, not flat. Posting a price (maker) is often 0%; taking a price ~1.5%. Some sources report commission on losing bets too, which changes the maths materially — VERIFY on your own account before trusting this figure.'},
+// ---- PREDICTION MARKETS: fee = coeff x C x P x (1-P), charged ON ENTRY, win or lose ----
+'kalshi':{kind:'trade',coeff:0.07,label:'Kalshi',note:'Taker fee, rounded up to the next cent. Max ~1.75% at P=0.50. Resting limit orders (maker) are cheaper or free. No settlement fee, no membership fee.'},
+'polymarket':{kind:'trade',coeff:0.05,label:'Polymarket',note:'Sports taker coefficient as of Jul 2026 (raised from 0.03). Makers pay 0. Geopolitics markets are fee-free. US regulated exchange uses a flat 0.30% taker instead.'},
+// ---- SPORTSBOOKS: no explicit fee. Their entire margin is the overround inside the odds. ----
+'pinnacle':{kind:'none',label:'Pinnacle',note:'No commission. Famously low margin (~2-3%) and does not limit winners — the closest thing to a sharp book.'},
+'bet365':{kind:'none',label:'Bet365',note:'No commission. Known for limiting consistently winning accounts.'},
+'williamhill':{kind:'none',label:'William Hill',note:'No commission.'},
+'williamhill-uk':{kind:'none',label:'William Hill UK',note:'No commission.'},
+'unibet':{kind:'none',label:'Unibet',note:'No commission.'},
+'unibet-uk':{kind:'none',label:'Unibet UK',note:'No commission.'},
+'betway':{kind:'none',label:'Betway',note:'No commission.'},
+'sky-bet':{kind:'none',label:'Sky Bet',note:'No commission. Limits aggressively.'},
+'skybet':{kind:'none',label:'Sky Bet',note:'No commission.'},
+'ladbrokes':{kind:'none',label:'Ladbrokes',note:'No commission.'},
+'coral':{kind:'none',label:'Coral',note:'No commission. Same group as Ladbrokes — limits often applied across both.'},
+'paddy-power':{kind:'none',label:'Paddy Power',note:'No commission. Same group as Betfair.'},
+'paddypower':{kind:'none',label:'Paddy Power',note:'No commission.'},
+'betvictor':{kind:'none',label:'BetVictor',note:'No commission.'},
+'bet-victor':{kind:'none',label:'BetVictor',note:'No commission.'},
+'virgin-bet':{kind:'none',label:'Virgin Bet',note:'No commission.'},
+'virginbet':{kind:'none',label:'Virgin Bet',note:'No commission.'},
+'888sport':{kind:'none',label:'888sport',note:'No commission.'},
+'mrgreen':{kind:'none',label:'Mr Green',note:'No commission.'},
+'betfred':{kind:'none',label:'Betfred',note:'No commission.'},
+'pokerstars':{kind:'none',label:'PokerStars',note:'No commission.'},
+'pokerstars-uk':{kind:'none',label:'PokerStars UK',note:'No commission.'},
+'draftkings':{kind:'none',label:'DraftKings',note:'No commission on standard bets.'},
+'sportingbet':{kind:'none',label:'Sportingbet',note:'No commission.'},
+'spreadex':{kind:'none',label:'Spreadex',note:'No commission on fixed-odds. Spread betting products carry their own spread cost.'},
+'boylesports':{kind:'none',label:'BoyleSports',note:'No commission.'},
+'grosvenor':{kind:'none',label:'Grosvenor',note:'No commission.'},
+'tote':{kind:'none',label:'Tote',note:'Pool betting — takeout is deducted from the pool before dividends, typically far higher than any exchange commission.'},
+};
+// Costs that don't attach to a single bet but hit a real account.
+const ANCILLARY_COSTS=[
+['Betfair Expert Fee','Replaced the Premium Charge on 6 Jan 2025. Tiered on rolling 52-week gross profit: 0% below £25k, 20% from £25k-£100k, 40% above £100k. Applied weekly, ON TOP of standard commission. This is the single largest cost facing a consistently profitable exchange bettor.'],
+['Account limiting / closure','Not a fee, but the dominant real-world cost. Sportsbooks restrict stake sizes or close accounts of consistent winners, often within weeks of detecting arbitrage patterns. Exchanges do not limit. Pinnacle notably does not limit.'],
+['Withdrawal fees','Usually £0 by bank transfer at UK books. Kalshi: free by bank, card deposits up to 2%. Polymarket: on-chain gas costs.'],
+['Currency conversion','2-4% typical if your account currency differs from the market currency. Relevant for Kalshi/Polymarket (USD) from a GBP bankroll — this can exceed the trading fee itself.'],
+['Dormancy fees','Some operators charge monthly after 12+ months of inactivity.'],
+['Bet cancellation / palpable error','Books void bets priced in obvious error. An arb that looked too good is the most likely candidate to be voided, leaving you with one unhedged leg.'],
+];
+const DEFAULT_FEE={kind:'none',rate:0};
+function feeSpecFor(slug,type){
+if(FEE_MODEL[slug])return FEE_MODEL[slug];
+// fall back by platform type if we don't have a named rate for this book
+if(type==='exchange')return{kind:'commission',rate:(ledgerState?.fallbackExchange??0.02),note:'fallback exchange rate'};
+if(type==='prediction')return{kind:'trade',coeff:0.05,note:'fallback prediction-market rate'};
+return DEFAULT_FEE;
+}
+// Fee charged at the moment the bet is PLACED (prediction markets only — sunk regardless of outcome).
+function entryFee(slug,type,stake,odds){
+const s=feeSpecFor(slug,type);
+if(s.kind!=='trade'||!odds||odds<=1)return 0;
+return s.coeff*stake*(odds-1)/odds;
+}
+// Fee charged only if the bet WINS (exchange commission on net winnings).
+function winFee(slug,type,stake,odds){
+const s=feeSpecFor(slug,type);
+if(s.kind!=='commission'||!odds)return 0;
+return s.rate*stake*(odds-1);
+}
+function slugForLabel(label){
+const e=Object.entries(BM_META).find(([k,m])=>m.label===label);
+return e?e[0]:null;
+}
 let ledgerState=null;
 async function loadLedger(){
 try{
 const res=await window.storage.get(LEDGER_KEY,false);
 ledgerState=res?JSON.parse(res.value):null;
 }catch(e){ledgerState=null;}
-if(!ledgerState)ledgerState={bankroll:STARTING_BANKROLL,bankrollNet:STARTING_BANKROLL,bets:[],feeRates:{...DEFAULT_FEE_RATES}};
-if(!ledgerState.feeRates)ledgerState.feeRates={...DEFAULT_FEE_RATES};
+if(!ledgerState)ledgerState={bankroll:STARTING_BANKROLL,bankrollNet:STARTING_BANKROLL,bets:[],betfairRate:0.05,slippage:0.005,scanBudget:{}};
+if(ledgerState.betfairRate==null)ledgerState.betfairRate=0.05;
+if(ledgerState.slippage==null)ledgerState.slippage=0.005;
+if(!ledgerState.scanBudget)ledgerState.scanBudget={};
 if(ledgerState.bankrollNet==null)ledgerState.bankrollNet=ledgerState.bankroll;
-document.getElementById('feeSportsbook').value=ledgerState.feeRates.sportsbook;
-document.getElementById('feeExchange').value=ledgerState.feeRates.exchange;
-document.getElementById('feePrediction').value=ledgerState.feeRates.prediction;
+FEE_MODEL['betfair-ex'].rate=ledgerState.betfairRate;
+FEE_MODEL['betfair'].rate=ledgerState.betfairRate;
+document.getElementById('feeBetfair').value=(ledgerState.betfairRate*100).toFixed(1);
+document.getElementById('slippagePct').value=(ledgerState.slippage*100).toFixed(1);
 renderLedgerUI();
+renderFeeTable();
 }
 async function saveLedger(){
 try{const r=await window.storage.set(LEDGER_KEY,JSON.stringify(ledgerState),false);if(!r)log('ledger save returned no result','err');}
 catch(e){log('ledger save failed: '+e.message,'err');}
 }
 function updateFeeRates(){
-ledgerState.feeRates={
-sportsbook:parseFloat(document.getElementById('feeSportsbook').value)||0,
-exchange:parseFloat(document.getElementById('feeExchange').value)||0,
-prediction:parseFloat(document.getElementById('feePrediction').value)||0
-};
+ledgerState.betfairRate=(parseFloat(document.getElementById('feeBetfair').value)||0)/100;
+ledgerState.slippage=(parseFloat(document.getElementById('slippagePct').value)||0)/100;
+FEE_MODEL['betfair-ex'].rate=ledgerState.betfairRate;
+FEE_MODEL['betfair'].rate=ledgerState.betfairRate;
 saveLedger();
 renderLedgerUI();
 }
-function feeRateFor(type){return((ledgerState.feeRates&&ledgerState.feeRates[type])||0)/100;}
+// Odds actually achievable after slippage — displayed top-of-book rarely fills in full size.
+function slipOdds(odds){return 1+(odds-1)*(1-(ledgerState?.slippage||0));}
 function paperStakeArb(bankroll){return Math.min(bankroll*0.10,750);}
 function paperStakeEV(bankroll,fStar){return Math.min(bankroll*fStar*0.5,bankroll*0.05);}
 function openStakeTotal(){return ledgerState.bets.filter(b=>b.status==='open').reduce((s,b)=>s+b.stake,0);}
@@ -706,20 +827,24 @@ const fixtureId=f.fixtureId||(p1n+'|'+p2n);
 const time=f.startTime||null;
 let changed=false;
 if(f._arb!=null){
-const p1O=Object.values(results).map(r=>({book:r.label,type:r.type,o:r.p1})).filter(x=>x.o).sort((a,b)=>b.o-a.o);
-const p2O=Object.values(results).map(r=>({book:r.label,type:r.type,o:r.p2})).filter(x=>x.o).sort((a,b)=>b.o-a.o);
+const p1O=Object.entries(results).map(([slug,r])=>({slug,book:r.label,type:r.type,o:r.p1})).filter(x=>x.o).sort((a,b)=>b.o-a.o);
+const p2O=Object.entries(results).map(([slug,r])=>({slug,book:r.label,type:r.type,o:r.p2})).filter(x=>x.o).sort((a,b)=>b.o-a.o);
 const b1=p1O[0],b2=p2O[0];
 if(b1&&b2){
 const key=betKey(fixtureId,'arb',p1n+'/'+p2n,b1.book+'+'+b2.book);
 if(!alreadyLogged(key)){
 const stake=paperStakeArb(ledgerState.bankroll);
-const i1=1/b1.o,i2=1/b2.o,over=i1+i2;
+// size the legs on slippage-adjusted odds — that's what you'd actually get filled at
+const o1=slipOdds(b1.o),o2=slipOdds(b2.o);
+const i1=1/o1,i2=1/o2,over=i1+i2;
 const s1=stake*(i1/over),s2=stake*(i2/over);
 const grossProfit=stake*(1/over)-stake;
+const eFee=entryFee(b1.slug,b1.type,s1,o1)+entryFee(b2.slug,b2.type,s2,o2);
 ledgerState.bets.push({key,loggedAt:Date.now(),matchTime:time,match:p1n+' vs '+p2n,type:'arb',
 detail:'back '+p1n+' @ '+b1.o.toFixed(2)+' ('+b1.book+', £'+s1.toFixed(2)+') / back '+p2n+' @ '+b2.o.toFixed(2)+' ('+b2.book+', £'+s2.toFixed(2)+')',
-stake,grossProfit,status:'open',pnl:null,pnlNet:null,
-legs:{p1:{book:b1.book,type:b1.type,odds:b1.o,stake:s1},p2:{book:b2.book,type:b2.type,odds:b2.o,stake:s2}}});
+stake,grossProfit,status:'open',pnl:null,pnlNet:null,entryFee:eFee,
+legs:{p1:{slug:b1.slug,book:b1.book,type:b1.type,odds:o1,shown:b1.o,stake:s1},p2:{slug:b2.slug,book:b2.book,type:b2.type,odds:o2,shown:b2.o,stake:s2}}});
+if(eFee>0)ledgerState.bankrollNet-=eFee; // prediction-market entry fees are sunk immediately
 changed=true;
 }
 }
@@ -731,10 +856,15 @@ const key=betKey(fixtureId,'ev',top.side,top.book);
 if(!alreadyLogged(key)){
 const stake=paperStakeEV(ledgerState.bankroll,top.fStar);
 if(stake>=1){
+const slug=slugForLabel(top.book);
+const btype=inferType(top.book);
+const oEff=slipOdds(top.odds);
+const eFee=entryFee(slug,btype,stake,oEff);
 ledgerState.bets.push({key,loggedAt:Date.now(),matchTime:time,match:p1n+' vs '+p2n,type:'ev',
 detail:top.side+' @ '+top.odds.toFixed(2)+' ('+top.book+'), fair prob '+(top.fairProb*100).toFixed(1)+'%, +'+top.ev.toFixed(1)+'% EV',
-stake,grossProfit:stake*(top.ev/100),status:'open',pnl:null,pnlNet:null,
-odds:top.odds,bookType:top.bookType||inferType(top.book)});
+stake,grossProfit:stake*(top.ev/100),status:'open',pnl:null,pnlNet:null,entryFee:eFee,
+odds:oEff,shown:top.odds,slug,bookType:btype});
+if(eFee>0)ledgerState.bankrollNet-=eFee;
 changed=true;
 }
 }
@@ -763,24 +893,26 @@ async function settleArb(idx,winner){
 const bet=ledgerState.bets[idx];
 const winLeg=bet.legs[winner];
 const grossPnl=bet.grossProfit;
-const feeOnWin=feeRateFor(winLeg.type)*winLeg.stake*(winLeg.odds-1);
-const netPnl=grossPnl-feeOnWin;
-bet.pnl=grossPnl;bet.pnlNet=netPnl;bet.status='settled';bet.winner=winner;
+// commission bites only the winning leg, and only if that leg sits on an exchange.
+// entry fees (prediction markets) were already deducted when the bet was placed.
+const commission=winFee(winLeg.slug,winLeg.type,winLeg.stake,winLeg.odds);
+const netPnl=grossPnl-commission;
+bet.pnl=grossPnl;bet.pnlNet=netPnl;bet.status='settled';bet.winner=winner;bet.commission=commission;
 ledgerState.bankroll+=grossPnl;
 ledgerState.bankrollNet+=netPnl;
 await saveLedger();renderLedgerUI();
 }
 async function settleEV(idx,outcome){
 const bet=ledgerState.bets[idx];
-let grossPnl,netPnl;
+let grossPnl,netPnl,commission=0;
 if(outcome==='won'){
 grossPnl=bet.stake*(bet.odds-1);
-const fee=feeRateFor(bet.bookType)*grossPnl;
-netPnl=grossPnl-fee;
+commission=winFee(bet.slug,bet.bookType,bet.stake,bet.odds);
+netPnl=grossPnl-commission;
 }else{
-grossPnl=-bet.stake;netPnl=-bet.stake; // losing stake — no commission on a loss
+grossPnl=-bet.stake;netPnl=-bet.stake; // no commission on a loss (entry fee already sunk at placement)
 }
-bet.pnl=grossPnl;bet.pnlNet=netPnl;bet.status=outcome;
+bet.pnl=grossPnl;bet.pnlNet=netPnl;bet.status=outcome;bet.commission=commission;
 ledgerState.bankroll+=grossPnl;
 ledgerState.bankrollNet+=netPnl;
 await saveLedger();renderLedgerUI();
@@ -792,10 +924,138 @@ await saveLedger();renderLedgerUI();
 }
 async function resetLedger(){
 if(!confirm('Reset the paper trading ledger back to £5,000 and clear all logged bets?'))return;
-ledgerState={bankroll:STARTING_BANKROLL,bankrollNet:STARTING_BANKROLL,bets:[],feeRates:ledgerState.feeRates};
+ledgerState={bankroll:STARTING_BANKROLL,bankrollNet:STARTING_BANKROLL,bets:[],betfairRate:ledgerState.betfairRate,slippage:ledgerState.slippage,scanBudget:{}};
 await saveLedger();renderLedgerUI();
 }
 function refreshLedgerUI(){renderLedgerUI();}
+function renderFeeTable(){/* fee library now lives on fees.html */}
+
+// ---------- Auto-scan scheduler ----------
+// Odds move most in the hours immediately before an event: team news lands, sharp/late money
+// arrives, exchange liquidity peaks, and books update at different speeds — which is exactly
+// when cross-book disagreement (and therefore arbs/+EV) appears. So scans are weighted toward
+// the run-up rather than spread evenly. Constrained by a hard API request budget.
+let schedTimer=null;
+function todayKey(){return new Date().toISOString().slice(0,10);}
+function budgetUsedToday(){return(ledgerState?.scanBudget?.[todayKey()])||0;}
+function budgetLimit(){return parseInt(document.getElementById('dailyBudget')?.value)||8;}
+function budgetLeft(){return Math.max(0,budgetLimit()-budgetUsedToday());}
+async function spendBudget(n){
+const k=todayKey();
+ledgerState.scanBudget[k]=(ledgerState.scanBudget[k]||0)+n;
+await saveLedger();
+}
+// Priority score for scanning a given fixture now. Higher = scan sooner.
+function scanPriority(f){
+if(!f.startTime)return 0.05;
+const h=(new Date(f.startTime).getTime()-Date.now())/3600000;
+if(h<=0.33)return 0;      // inside 20 min — too late to reliably get a bet placed
+if(h<=6)return 1/(0.5+h); // the hot window: rises sharply as the event approaches
+if(h<=12)return 0.10;     // worth an occasional look
+if(h<=24)return 0.04;     // discovery only
+return 0.01;
+}
+function nextScanTargets(){
+return Object.entries(fixturesCache)
+.map(([k,f])=>({k,f,score:scanPriority(f)}))
+.filter(x=>x.score>0)
+.filter(x=>!x.f._lastScan||(Date.now()-x.f._lastScan)>45*60*1000) // don't re-scan same match within 45 min
+.sort((a,b)=>b.score-a.score);
+}
+async function schedulerTick(){
+if(!document.getElementById('autoScanToggle')?.checked)return;
+if(!Object.keys(fixturesCache).length){log('scheduler: no fixtures loaded — load a tournament first','info');return;}
+const left=budgetLeft();
+if(left<=0){log('scheduler: daily request budget spent — pausing until tomorrow','info');return;}
+const targets=nextScanTargets();
+if(!targets.length){log('scheduler: nothing in the priority window right now','info');return;}
+const batch=targets.slice(0,Math.min(left,3)); // small batches, spread through the day
+log('scheduler: scanning '+batch.length+' high-priority match(es)','info');
+for(const t of batch){
+const f=t.f;
+try{
+const data=await get('/odds?fixtureId='+(f.fixtureId||f.id)+'&oddsFormat=decimal&verbosity=3');
+oddsCache[f.fixtureId||f.id]=data;
+await spendBudget(1);
+const results=parseResults(data.bookmakerOdds||{},false,'','');
+f._books=Object.keys(results).length;f._lastScan=Date.now();f._scanned=true;
+if(f._books<3){f._thin=true;}
+else{
+correctFlipsQuiet(results);
+f._arb=arbProfit(results);
+const p1n=(f.participant1Name||'').split(',')[0],p2n=(f.participant2Name||'').split(',')[0];
+const vbs=findValueBets(results,p1n,p2n);
+f._ev=vbs.length?vbs[0].ev:null;f._evBook=vbs.length?vbs[0].book:null;
+await maybeLogPaperBet(f,results,p1n,p2n);
+if(f._arb!=null)log('scheduler ARB '+f._arb.toFixed(2)+'%: '+p1n+' vs '+p2n,'ok');
+else if(f._ev!=null)log('scheduler +EV '+f._ev.toFixed(1)+'%: '+p1n+' vs '+p2n,'ok');
+}
+}catch(e){log('scheduler scan failed: '+e.message,'err');}
+await new Promise(r=>setTimeout(r,2500));
+}
+renderFixtureList();renderLedgerUI();updateSchedStatus();
+}
+function updateSchedStatus(){
+const el=document.getElementById('schedStatus');
+if(!el)return;
+const targets=nextScanTargets();
+const nextUp=targets[0];
+el.innerHTML='budget: <strong>'+budgetLeft()+'/'+budgetLimit()+'</strong> requests left today · '+
+(nextUp?('next priority: '+(nextUp.f.participant1Name||'?').split(',')[0]+' ('+((new Date(nextUp.f.startTime)-Date.now())/3600000).toFixed(1)+'h out)'):'nothing in window');
+}
+function toggleAutoScan(){
+const on=document.getElementById('autoScanToggle').checked;
+if(on){
+schedulerTick();
+schedTimer=setInterval(schedulerTick,15*60*1000); // re-evaluate every 15 min
+log('auto-scan ON — re-evaluating every 15 min while this tab stays open','ok');
+}else{
+if(schedTimer)clearInterval(schedTimer);schedTimer=null;
+log('auto-scan OFF','info');
+}
+updateSchedStatus();
+}
+
+// ---------- Excel export ----------
+function exportLedgerXlsx(){
+if(!ledgerState||!ledgerState.bets.length){log('nothing to export','err');return;}
+if(typeof XLSX==='undefined'){log('XLSX library not loaded yet — try again in a moment','err');return;}
+const rows=ledgerState.bets.map(b=>({
+'Logged (UTC)':new Date(b.loggedAt).toISOString().replace('T',' ').slice(0,16),
+'Match':b.match,
+'Event start':b.matchTime?new Date(b.matchTime).toISOString().replace('T',' ').slice(0,16):'',
+'Type':b.type.toUpperCase(),
+'Detail':b.detail,
+'Stake (£)':+b.stake.toFixed(2),
+'Expected profit (£)':+b.grossProfit.toFixed(2),
+'Entry fee (£)':+((b.entryFee||0).toFixed(2)),
+'Commission (£)':+((b.commission||0).toFixed(2)),
+'Status':b.status,
+'Gross P&L (£)':b.pnl!=null?+b.pnl.toFixed(2):'',
+'Net P&L (£)':b.pnlNet!=null?+(b.pnlNet-(b.entryFee||0)).toFixed(2):''
+}));
+const totalStake=ledgerState.bets.reduce((s,b)=>s+b.stake,0);
+const summary=[
+{Metric:'Starting bankroll (£)',Value:STARTING_BANKROLL},
+{Metric:'Paper bankroll — gross, no fees (£)',Value:+ledgerState.bankroll.toFixed(2)},
+{Metric:'Estimated live bankroll — net of fees (£)',Value:+ledgerState.bankrollNet.toFixed(2)},
+{Metric:'Gross P&L (£)',Value:+(ledgerState.bankroll-STARTING_BANKROLL).toFixed(2)},
+{Metric:'Net P&L after all costs (£)',Value:+(ledgerState.bankrollNet-STARTING_BANKROLL).toFixed(2)},
+{Metric:'Total fees paid (£)',Value:+(ledgerState.bankroll-ledgerState.bankrollNet).toFixed(2)},
+{Metric:'Total staked (£)',Value:+totalStake.toFixed(2)},
+{Metric:'Return on turnover (net)',Value:totalStake?((ledgerState.bankrollNet-STARTING_BANKROLL)/totalStake):0},
+{Metric:'Bets logged',Value:ledgerState.bets.length},
+{Metric:'Settled',Value:ledgerState.bets.filter(b=>b.status!=='open').length},
+{Metric:'Betfair commission assumption',Value:ledgerState.betfairRate},
+{Metric:'Slippage assumption',Value:ledgerState.slippage},
+{Metric:'Exported',Value:new Date().toISOString().slice(0,16).replace('T',' ')}
+];
+const wb=XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'Summary');
+XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Bet Ledger');
+XLSX.writeFile(wb,'paper-ledger-'+todayKey()+'.xlsx');
+log('exported ledger to Excel','ok');
+}
 function renderLedgerUI(){
 if(!ledgerState)return;
 const settled=ledgerState.bets.filter(b=>b.status!=='open');
@@ -806,7 +1066,9 @@ document.getElementById('ledgerSummary').innerHTML=
 '<div class="summary-row-item"><span>paper bankroll (no fees)</span><span class="big">£'+ledgerState.bankroll.toFixed(2)+' <span style="font-size:11px;color:'+(grossPnl>=0?'#2a5a10':'#712B13')+'">('+(grossPnl>=0?'+':'')+'£'+grossPnl.toFixed(2)+')</span></span></div>'+
 '<div class="summary-row-item"><span>est. live bankroll (with fees)</span><span class="big" style="color:'+(netPnl>=0?'#2a5a10':'#712B13')+'">£'+ledgerState.bankrollNet.toFixed(2)+' <span style="font-size:11px">('+(netPnl>=0?'+':'')+'£'+netPnl.toFixed(2)+')</span></span></div>'+
 '<div class="summary-row-item"><span>open / at risk</span><span>'+open.length+' bets, £'+openStakeTotal().toFixed(2)+' ('+((openStakeTotal()/ledgerState.bankroll)*100).toFixed(0)+'% of bankroll)</span></div>'+
+'<div class="summary-row-item"><span>total transaction costs paid</span><span style="color:#712B13">−£'+(ledgerState.bankroll-ledgerState.bankrollNet).toFixed(2)+'</span></div>'+
 '<div class="summary-row-item"><span>settled bets</span><span>'+settled.length+'</span></div>';
+updateSchedStatus();
 if(!ledgerState.bets.length){document.getElementById('ledgerTable').innerHTML='<div class="empty">no paper bets logged yet — hit "⚡ scan all for arbs" on a tournament, or use the 📒 log buttons on a match you\'re viewing</div>';return;}
 const rows=[...ledgerState.bets].map((b,i)=>({b,i})).reverse().map(({b,idx})=>{
 let actions;

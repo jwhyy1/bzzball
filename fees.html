@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Transaction Cost Reference — Odds Arbitrage Analyser</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+a.back { font-size: 12px; color: #666; text-decoration: none; }
+a.back:hover { text-decoration: underline; }
+h1 { font-size: 22px; font-weight: 600; margin: 0.75rem 0 0.25rem; }
+.sub { font-size: 13px; color: #888; margin-bottom: 1.5rem; line-height: 1.6; }
+.card { background: #fff; border: 1px solid #e8e8e8; border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.kind { font-size: 12px; color: #888; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.06em; text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; font-weight: 600; }
+td { padding: 8px; border-bottom: 1px solid #f5f5f5; vertical-align: top; line-height: 1.5; }
+td.name { font-weight: 600; white-space: nowrap; }
+td.rate { white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; }
+td.note { color: #777; font-size: 12px; }
+.pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
+.p-ex { background: #deeefb; color: #0C447C; }
+.p-pm { background: #f0e6fb; color: #5a0c7c; }
+.p-sb { background: #f0f0f0; color: #555; }
+.warn { background: #fff8f0; border: 1px solid #f5c4b3; border-radius: 8px; padding: 0.85rem 1rem; font-size: 13px; color: #712B13; line-height: 1.6; margin-bottom: 1.25rem; }
+.formula { background: #f9f9f7; border: 1px solid #e8e8e4; border-radius: 8px; padding: 1rem 1.25rem; font-size: 13px; line-height: 1.7; margin-bottom: 1.25rem; }
+.formula code { background: #fff; border: 1px solid #e0e0dc; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+.updated { font-size: 11px; color: #aaa; margin-top: 1.5rem; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e0e0dc;padding-bottom:10px;margin-bottom:16px">
+<h1 style="margin:0;font-size:18px">Odds Arbitrage Analyser</h1>
+<nav style="display:flex;gap:6px">
+<a href="index.html" style="font-size:12px;font-weight:600;padding:5px 12px;border-radius:7px;background:#fff;color:#555;border:1px solid #ddd;text-decoration:none">← Analyser</a>
+<span style="font-size:12px;font-weight:600;padding:5px 12px;border-radius:7px;background:#1a1a1a;color:#fff">Cost Reference</span>
+</nav>
+</div>
+<h1>Transaction Cost Reference</h1>
+<div class="sub">Every cost that isn't already inside the quoted odds. Rates verified August 2026.</div>
+
+<div class="warn">
+<strong>Verify these against your own accounts before trusting them.</strong> Commission varies by tier, region, promotion and account age. A rate that's wrong by 2 percentage points is enough to turn a profitable arb strategy into a losing one.
+</div>
+
+<div class="formula">
+<strong>Understanding the prediction-market formula</strong><br>
+Prediction markets price in contracts, not odds. <code>C</code> = number of contracts. <code>P</code> = price per contract in dollars, which <em>is</em> the implied probability — a contract at $0.40 implies 40% and pays $1.00 if it happens.<br><br>
+<code>fee = coeff × C × P × (1 − P)</code><br><br>
+Because of the <code>P × (1 − P)</code> term the fee <strong>peaks at even money</strong> and shrinks toward both extremes. A 50/50 contract is the most expensive thing on the board; a 5¢ longshot or 95¢ near-lock is cheap. Arbs and +EV bets cluster on competitive matchups, so they sit on the expensive part of that curve.<br><br>
+In stake terms, since <code>P = 1/odds</code> and <code>C = stake/P</code>, this collapses to:<br>
+<code>fee = coeff × stake × (odds − 1) / odds</code>
+</div>
+
+<div class="card">
+<h2>Exchanges <span class="pill p-ex">EX</span></h2>
+<div class="kind">Commission on <strong>net winnings</strong>, charged only when you win. Nothing on a loss. Betfair charges per <em>market</em>, so a back and lay that net to zero pay nothing.</div>
+<table>
+<thead><tr><th>Platform</th><th>Rate</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td class="name">Betfair Exchange</td><td class="rate">5.0%</td><td class="note">UK/IE base rate — the highest of the major exchanges. Reducible toward ~2% via My Betfair Rewards, which requires sustained volume. Expert Fee applies on top for consistent winners (see below).</td></tr>
+<tr><td class="name">Smarkets</td><td class="rate">2.0%</td><td class="note">Flat, no premium or expert charge. Intro offers sometimes waive commission for a period. Thinner liquidity than Betfair beyond major markets.</td></tr>
+<tr><td class="name">Betdaq</td><td class="rate">2.0%</td><td class="note">Standard 2%, with 0% on selected markets. No premium charge. Liquidity concentrated on UK/IE horse racing.</td></tr>
+<tr><td class="name">Matchbook</td><td class="rate">~0% maker / ~1.5% taker</td><td class="note"><strong>Verify this one.</strong> Maker-taker rather than flat, and sources disagree: some report 2% flat on net winnings, others 2.5% with volume tiers, others 0.75–1.5% maker/taker <em>charged on losing bets as well</em>. That last variant changes the maths materially. Strongest liquidity on US sports.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Prediction markets <span class="pill p-pm">PM</span></h2>
+<div class="kind">Fee charged <strong>on entry — win or lose</strong>. It is sunk the moment the trade fills, unlike exchange commission.</div>
+<table>
+<thead><tr><th>Platform</th><th>Rate</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td class="name">Kalshi</td><td class="rate">0.07 × C × P × (1−P)</td><td class="note">Taker fee, rounded up to the next cent. Maximum ~1.75% at P = 0.50. Resting limit orders (maker) are substantially cheaper or free. No settlement fee, no membership fee. Card deposits up to 2%; bank transfers free.</td></tr>
+<tr><td class="name">Polymarket</td><td class="rate">0.05 × C × P × (1−P)</td><td class="note">Sports coefficient as of July 2026, raised from 0.03. Makers pay nothing. Geopolitics markets remain fee-free. The US regulated exchange uses a flat 0.30% taker with a 0.20% maker rebate instead. On-chain gas costs apply.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Sportsbooks <span class="pill p-sb">SB</span></h2>
+<div class="kind">No separate fee at any of these. Their entire revenue is the overround baked into the odds — typically 5–8%, and around 2–3% at Pinnacle. Shopping for the best price <em>is</em> shopping for the lowest fee.</div>
+<table>
+<thead><tr><th>Platform</th><th>Fee</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td class="name">Pinnacle</td><td class="rate">None</td><td class="note">Lowest margin of any major book (~2–3%) and famously does not limit winning accounts. The reference price the rest of the market shadows.</td></tr>
+<tr><td class="name">Bet365</td><td class="rate">None</td><td class="note">Limits consistently winning accounts, often quickly.</td></tr>
+<tr><td class="name">Sky Bet</td><td class="rate">None</td><td class="note">Limits aggressively.</td></tr>
+<tr><td class="name">Ladbrokes / Coral</td><td class="rate">None</td><td class="note">Same group — restrictions are frequently applied across both simultaneously.</td></tr>
+<tr><td class="name">Paddy Power</td><td class="rate">None</td><td class="note">Same group as Betfair.</td></tr>
+<tr><td class="name">William Hill</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">Unibet</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">Betway</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">BetVictor</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">888sport</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">Betfred</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">Mr Green</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">Virgin Bet</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">BoyleSports</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">Grosvenor</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">PokerStars</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">Sportingbet</td><td class="rate">None</td><td class="note">—</td></tr>
+<tr><td class="name">DraftKings</td><td class="rate">None</td><td class="note">No commission on standard fixed-odds bets.</td></tr>
+<tr><td class="name">Spreadex</td><td class="rate">None on fixed-odds</td><td class="note">Spread betting products carry their own spread cost, which is a different animal entirely.</td></tr>
+<tr><td class="name">Tote</td><td class="rate">Pool takeout</td><td class="note">Pool betting, not fixed odds. Takeout is removed from the pool before dividends are calculated — typically far higher than any exchange commission.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>Costs that don't attach to a single bet</h2>
+<div class="kind">These sit outside the per-trade model but hit a real account, and two of them dwarf everything above.</div>
+<table>
+<thead><tr><th>Cost</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td class="name">Betfair Expert Fee</td><td class="note">Replaced the Premium Charge on 6 January 2025. Tiered on rolling 52-week gross profit: <strong>0% below £25k, 20% from £25k–£100k, 40% above £100k</strong>, applied weekly and <em>on top of</em> standard commission. This is the single largest cost facing a consistently profitable exchange bettor, and it scales precisely with success.</td></tr>
+<tr><td class="name">Account limiting / closure</td><td class="note">Not a fee, but in practice the dominant real-world cost. Sportsbooks restrict stake sizes or close accounts that win consistently, frequently within weeks of detecting arbitrage patterns. Exchanges do not limit — they earn commission either way. Pinnacle notably does not limit. <strong>This ends more arbitrage operations than commission ever does.</strong></td></tr>
+<tr><td class="name">Currency conversion</td><td class="note">2–4% typical where account currency differs from market currency. Relevant for Kalshi and Polymarket (USD-denominated) funded from a GBP bankroll — this routinely exceeds the trading fee itself and is easy to overlook.</td></tr>
+<tr><td class="name">Withdrawal fees</td><td class="note">Usually £0 by bank transfer at UK books. Kalshi free by bank, card deposits up to 2%. Polymarket incurs on-chain gas costs.</td></tr>
+<tr><td class="name">Bet cancellation / palpable error</td><td class="note">Books void bets priced in obvious error. An arb that looks too good to be true is the likeliest candidate to be voided — leaving you holding one unhedged leg with real directional risk.</td></tr>
+<tr><td class="name">Dormancy fees</td><td class="note">Some operators charge monthly after 12+ months of inactivity.</td></tr>
+<tr><td class="name">Slippage</td><td class="note">Not charged by anyone, but a real cost. Displayed top-of-book prices rarely fill in full size on thinner exchange markets, so realised odds are typically worse than quoted. Modelled as a configurable haircut in the analyser.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="updated">Rates verified August 2026 · <a class="back" href="index.html">← back to analyser</a></div>
+</div>
+</body>
+</html>
